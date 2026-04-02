@@ -14,4 +14,5 @@ requests
 # - Git (for cloning repositories) - Install via 'brew install git' on macOS
 # - npm (Node.js package manager, for installing dependencies in the setup tool) - Install via 'brew install node' on macOS
 # - Docker Desktop (for containerized development) - Download from https://www.docker.com/get-started/
-# - A valid GitHub access token (with repo creation permissions) - Create at https://github.com/settings/tokens
+# - VS Code (for extension installation) - Download from https://code.visualstudio.com/
+# - A valid GitHub access token (with repo creation permissions) - Create at https://github.tools.sap/settings/tokens (for SAP internal GitHub)
