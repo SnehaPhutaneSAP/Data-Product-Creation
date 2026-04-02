@@ -1,0 +1,17 @@
+# IMPORTANT: Before installing, create and activate a virtual environment to avoid externally-managed-environment errors:
+# python3 -m venv venv
+# source venv/bin/activate
+# Then run: python3 -m pip install -r requirements.txt
+
+# Usage: Run the script with 'python3 setup_project.py' (not 'python' on macOS)
+# Ensure all prerequisites are installed and running before executing the script.
+
+# Python packages required for the script
+requests
+
+# System prerequisites (not installable via pip):
+# - Python 3.x (with pip) - Install via 'brew install python' on macOS
+# - Git (for cloning repositories) - Install via 'brew install git' on macOS
+# - npm (Node.js package manager, for installing dependencies in the setup tool) - Install via 'brew install node' on macOS
+# - Docker Desktop (for containerized development) - Download from https://www.docker.com/get-started/
+# - A valid GitHub access token (with repo creation permissions) - Create at https://github.com/settings/tokens
