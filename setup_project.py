@@ -156,12 +156,26 @@ def wait_for_repo_clone_access(owner_name, repo_name, github_token, timeout_seco
     return False
 
 
+def open_repo_in_new_vscode_window(repo_path):
+    """Open the generated repository in a new VS Code window if the CLI is available."""
+    try:
+        subprocess.run(["code", "-n", repo_path], check=True, capture_output=True, text=True)
+        print(f"Opened generated project in a new VS Code window: {repo_path}")
+    except FileNotFoundError:
+        print("VS Code CLI ('code') was not found in PATH.")
+        print("In VS Code, run: Cmd+Shift+P -> 'Shell Command: Install code command in PATH', then rerun setup.")
+    except subprocess.CalledProcessError as error:
+        print(f"Warning: Could not open VS Code automatically: {error}")
+
+
 def main():
     check_prerequisites()
 
     github_org = input("Enter GitHub organization name (or your username for personal repos): ").strip()
     repo_name = input("Enter new repository name (alphabets, numbers, hyphens): ").strip()
-    clone_local_path = input("Enter local path for cloning the project: ").strip()
+
+    clone_local_path = os.path.expanduser(input("Enter local path for cloning the project: ").strip())
+
     github_token = input("Enter GitHub access token: ").strip()
     sap_artifactory_url = input(
         "Enter SAP Artifactory Docker registry URL (e.g., bdc-content-factory-docker-testing.common.repositories.cloud.sap): "
@@ -212,12 +226,21 @@ def main():
     target_base_path = os.path.abspath(clone_local_path)
     target_repo_path = os.path.join(target_base_path, repo_name)
     os.makedirs(target_base_path, exist_ok=True)
+
+    if os.path.isdir(target_repo_path) and os.listdir(target_repo_path):
+        print(f"Error: Target path '{target_repo_path}' already exists and is not empty.")
+        print("Choose a different local clone path or repository name to avoid conflicts.")
+        sys.exit(1)
+
     os.chdir(target_base_path)
 
-    subprocess.run(["git", "clone", "https://github.tools.sap/bdc-fos/transformation-setup.git"], check=True)
+    transformation_setup_dir = os.path.join(target_base_path, "transformation-setup")
+    if not os.path.isdir(transformation_setup_dir):
+        subprocess.run(["git", "clone", "https://github.tools.sap/bdc-fos/transformation-setup.git"], check=True)
     os.chdir("transformation-setup")
 
-    subprocess.run(["npm", "install"], check=True)
+    if not os.path.isdir(os.path.join(transformation_setup_dir, "node_modules")):
+        subprocess.run(["npm", "install"], check=True)
     shutil.copy("template.env", ".env")
 
     env_content = f"""GITHUB_ORG={github_org}
@@ -250,19 +273,26 @@ CLONE_REPO_NAME={repo_name}
 
     apply_template_bootstrap_steps(target_repo_path, repo_name, author_name, author_email)
 
+    repo_link = f"https://github.tools.sap/{github_org}/{repo_name}"
+
     print("Automated setup completed.")
+    print(f"Repository link: {repo_link}")
+    print(f"\nGenerated project path: {target_repo_path}\n")
     print("Next steps:")
-    print("1. Open the generated project in VS Code Dev Container (Cmd+Shift+P -> Dev Containers: Open Folder in Container).")
-    print("2. Run Cmd+Shift+P -> FOS: Run Task -> FOS: Bootstrap a new Data Engineering Project.")
-    print("3. Run Cmd+Shift+P -> Dev Containers: Rebuild Container.")
-    print("4. Git commit and push your bootstrapped files.")
-    print("5. Install the CAPDerivedDataProducts extension for DPD file generation:")
+    print(f"1. Open EXACTLY this folder in VS Code: {target_repo_path}")
+    print("   (Cmd+Shift+P -> Dev Containers: Open Folder in Container -> select the path above)")
+    print("   Important: open that specific folder, NOT its parent.")
+    print("2. Run Cmd+Shift+P -> Dev Containers: Rebuild Container.")
+    print("3. Git commit and push your bootstrapped files.")
+    print("4. Install the CAPDerivedDataProducts extension for DPD file generation:")
     print("   - Download the .vsix file: generatedpdfilesfromcds.vsix from https://github.tools.sap/bdc/CAPDerivedDataProducts")
     print("   - Open Visual Studio Code.")
     print("   - Open the Extensions panel (Ctrl + Shift + X on Windows).")
     print("   - Click the three dots > 'Install from VSIX...' and select the downloaded file.")
     print("   - Restart VS Code if prompted.")
     print("   - The extension will be available in the new repo for generating DPD files.")
+
+    open_repo_in_new_vscode_window(target_repo_path)
 
 
 if __name__ == "__main__":
