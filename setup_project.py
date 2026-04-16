@@ -160,6 +160,45 @@ def wait_for_repo_clone_access(owner_name, repo_name, github_token, timeout_seco
     return False
 
 
+def copy_ddp_template_base_class(script_dir, target_repo_path):
+    """Copy the ddp_template_base_class folder into the generated repository."""
+    source_dir = os.path.join(script_dir, "ddp_template_base_class")
+    if not os.path.isdir(source_dir):
+        print(f"Skipping ddp_template_base_class copy: source folder not found at {source_dir}")
+        return
+
+    dest_dir = os.path.join(target_repo_path, "ddp_template_base_class")
+    if os.path.isdir(dest_dir):
+        shutil.rmtree(dest_dir)
+
+    shutil.copytree(source_dir, dest_dir)
+    print(f"Copied ddp_template_base_class into generated repository: {dest_dir}")
+
+
+def copy_transformer_template(script_dir, target_repo_path, repo_name):
+    """Copy the transformer template into the generated repository, renaming it and updating imports."""
+    template_path = os.path.join(script_dir, "transformers", "derived_sales_contract_transformation.py")
+    if not os.path.isfile(template_path):
+        print(f"Skipping transformer copy: template not found at {template_path}")
+        return
+
+    package_name = repo_name.replace("-", "_")
+
+    with open(template_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    content = content.replace("bdc_ia_ddproducts", package_name)
+
+    dest_dir = os.path.join(target_repo_path, "transformers")
+    os.makedirs(dest_dir, exist_ok=True)
+
+    dest_file = os.path.join(dest_dir, f"{package_name}_transformation.py")
+    with open(dest_file, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    print(f"Copied transformer template as: {dest_file}")
+
+
 def open_repo_in_new_vscode_window(repo_path):
     """Open the generated repository in a new VS Code window if the CLI is available."""
     try:
@@ -340,6 +379,8 @@ CLONE_REPO_NAME={repo_name}
         return
 
     apply_template_bootstrap_steps(target_repo_path, repo_name, author_name, author_email)
+    copy_ddp_template_base_class(script_dir, target_repo_path)
+    copy_transformer_template(script_dir, target_repo_path, repo_name)
 
     repo_link = f"https://github.tools.sap/{github_org}/{repo_name}"
 

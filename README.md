@@ -7,6 +7,8 @@ The script covers:
 - Transformation setup bootstrap (`npm start` flow)
 - Template prep steps (`cookiecutter` + `make init` when available)
 - Clear next steps for VS Code Dev Containers and FOS task execution
+- Copying of `ddp_template_base_class` (base classes for pro-code derived data product transformations) into the generated repository
+- Generating a ready-to-use transformer script from the template, renamed and with imports updated to match the new repository name
 
 ## Prerequisites
 
@@ -69,6 +71,44 @@ The script will:
    - Copy `cookiecutter-template.json` to `cookiecutter.json`.
    - Fill `cookiecutter.json` with your project values.
    - Run `make init`.
+- Copy `ddp_template_base_class/` into the root of the generated repository.
+   - This folder contains `base_class.py` and `ddp_base_transformation.py`, which provide the base classes required for the pro-code derived data product transformation approach.
+- Generate a transformer script under `transformers/` in the generated repository.
+   - The script is created from the `derived_sales_contract_transformation.py` template in this repository.
+   - It is renamed to `<repo_name>_transformation.py` (hyphens replaced with underscores).
+   - All imports that previously referenced `bdc_ia_ddproducts` are updated to reference the new package name derived from the repository name.
+
+## Repository Structure (this repo)
+
+```
+Data-Product-Creation/
+├── setup_project.py                          # Main bootstrap automation script
+├── requirements.txt                          # Python dependencies
+├── ddp_template_base_class/                  # Base classes for pro-code DDP transformations
+│   ├── base_class.py
+│   └── ddp_base_transformation.py
+└── transformers/
+    └── derived_sales_contract_transformation.py  # Transformer template (used to generate repo-specific transformer)
+```
+
+## Generated Repository Structure
+
+After running the script, the generated repository will include (among other things):
+
+```
+<repo-name>/
+├── ddp_template_base_class/          # Copied from this setup repo
+│   ├── base_class.py
+│   └── ddp_base_transformation.py
+└── transformers/
+    └── <repo_name>_transformation.py  # Generated from template with updated imports
+```
+
+The transformer file's imports will reference the local `ddp_template_base_class`, for example:
+
+```python
+from <repo_name>.ddp_template_base_class.ddp_base_transformation import BaseTransformationJob
+```
 
 ## Post-Setup Steps
 
