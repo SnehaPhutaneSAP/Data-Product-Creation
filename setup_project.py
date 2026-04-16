@@ -9,6 +9,10 @@ from urllib.parse import urlparse
 import requests
 
 
+DEFAULT_TRANSFORMATION_SETUP_REPO = "https://github.tools.sap/bdc-fos/transformations-setup.git"
+DEFAULT_TRANSFORMATION_SETUP_BRANCH = "main"
+
+
 def check_prerequisites():
     """Check system prerequisites before running the setup."""
     print("Checking prerequisites...")
@@ -263,9 +267,44 @@ def main():
 
     os.chdir(target_base_path)
 
+    transformation_setup_repo = os.environ.get("TRANSFORMATION_SETUP_REPO_URL", DEFAULT_TRANSFORMATION_SETUP_REPO).strip()
+    transformation_setup_branch = os.environ.get("TRANSFORMATION_SETUP_BRANCH", DEFAULT_TRANSFORMATION_SETUP_BRANCH).strip()
+
     transformation_setup_dir = os.path.join(target_base_path, "transformation-setup")
     if not os.path.isdir(transformation_setup_dir):
-        subprocess.run(["git", "clone", "https://github.tools.sap/bdc-fos/transformation-setup.git"], check=True)
+        print(f"Cloning transformation-setup from {transformation_setup_repo} (branch: {transformation_setup_branch})...")
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "--branch",
+                transformation_setup_branch,
+                transformation_setup_repo,
+                "transformation-setup",
+            ],
+            check=True,
+        )
+
+    if not os.path.isdir(transformation_setup_dir):
+        print(f"Error: transformation-setup directory was not created at {transformation_setup_dir}")
+        sys.exit(1)
+
+    required_files = ["package.json", "template.env"]
+    missing_files = [
+        file_name
+        for file_name in required_files
+        if not os.path.isfile(os.path.join(transformation_setup_dir, file_name))
+    ]
+    if missing_files:
+        print(
+            "Error: transformation-setup is incomplete. Missing required files: "
+            + ", ".join(missing_files)
+        )
+        print(f"Checked path: {transformation_setup_dir}")
+        sys.exit(1)
+
     os.chdir("transformation-setup")
 
     if not os.path.isdir(os.path.join(transformation_setup_dir, "node_modules")):
