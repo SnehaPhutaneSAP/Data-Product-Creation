@@ -168,7 +168,36 @@ def open_repo_in_new_vscode_window(repo_path):
         print(f"Warning: Could not open VS Code automatically: {error}")
 
 
+def install_local_vsix_extension(script_dir):
+    """Install CAPDerivedDataProducts VSIX from the setup repository when available."""
+    vsix_candidates = sorted(
+        [
+            file_name
+            for file_name in os.listdir(script_dir)
+            if file_name.lower().startswith("generatedpdfilesfromcds") and file_name.lower().endswith(".vsix")
+        ],
+        reverse=True,
+    )
+
+    if not vsix_candidates:
+        print("VSIX auto-install skipped: no generatedpdfilesfromcds*.vsix found in setup repository.")
+        return
+
+    vsix_path = os.path.join(script_dir, vsix_candidates[0])
+    try:
+        subprocess.run(["code", "--install-extension", vsix_path], check=True, capture_output=True, text=True)
+        print(f"Installed CAPDerivedDataProducts extension from local VSIX: {vsix_path}")
+    except FileNotFoundError:
+        print("VSIX auto-install skipped: VS Code CLI ('code') is not available in PATH.")
+        print("Install it in VS Code via Cmd+Shift+P -> 'Shell Command: Install code command in PATH'.")
+    except subprocess.CalledProcessError as error:
+        print("VSIX auto-install failed. You can still install manually from VSIX in VS Code.")
+        if error.stderr:
+            print(f"Reason: {error.stderr.strip()}")
+
+
 def main():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     check_prerequisites()
 
     github_org = input("Enter GitHub organization name (or your username for personal repos): ").strip()
@@ -278,19 +307,18 @@ CLONE_REPO_NAME={repo_name}
     print("Automated setup completed.")
     print(f"Repository link: {repo_link}")
     print(f"\nGenerated project path: {target_repo_path}\n")
+
+    install_local_vsix_extension(script_dir)
+
     print("Next steps:")
     print(f"1. Open EXACTLY this folder in VS Code: {target_repo_path}")
     print("   (Cmd+Shift+P -> Dev Containers: Open Folder in Container -> select the path above)")
     print("   Important: open that specific folder, NOT its parent.")
     print("2. Run Cmd+Shift+P -> Dev Containers: Rebuild Container.")
     print("3. Git commit and push your bootstrapped files.")
-    print("4. Install the CAPDerivedDataProducts extension for DPD file generation:")
-    print("   - Download the .vsix file: generatedpdfilesfromcds.vsix from https://github.tools.sap/bdc/CAPDerivedDataProducts")
-    print("   - Open Visual Studio Code.")
-    print("   - Open the Extensions panel (Ctrl + Shift + X on Windows).")
-    print("   - Click the three dots > 'Install from VSIX...' and select the downloaded file.")
-    print("   - Restart VS Code if prompted.")
-    print("   - The extension will be available in the new repo for generating DPD files.")
+    print("4. CAPDerivedDataProducts extension installation:")
+    print("   - The script tries to auto-install from a local generatedpdfilesfromcds*.vsix file in this setup repository.")
+    print("   - If auto-install was skipped/failed, install manually from VSIX in VS Code.")
 
     open_repo_in_new_vscode_window(target_repo_path)
 

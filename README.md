@@ -78,12 +78,11 @@ After the script completes:
 3. Run `Cmd+Shift+P` -> `Dev Containers: Rebuild Container`.
 4. Git commit and push your bootstrapped files.
 5. Install the CAPDerivedDataProducts extension for DPD file generation:
-   - Download the .vsix file: `generatedpdfilesfromcds.vsix` from [https://github.tools.sap/bdc/CAPDerivedDataProducts](https://github.tools.sap/bdc/CAPDerivedDataProducts).
-   - Open Visual Studio Code.
-   - Open the Extensions panel (Ctrl + Shift + X on Windows).
-   - Click the three dots > "Install from VSIX..." and select the downloaded file.
-   - Restart VS Code if prompted.
-   - The extension will be available in the new repo for generating DPD files.
+   - If a file matching `generatedpdfilesfromcds*.vsix` exists in this setup repository, the script auto-installs it using the VS Code CLI (`code --install-extension`).
+   - If auto-install is skipped or fails, install manually from VSIX in Visual Studio Code:
+     - Open the Extensions panel (Ctrl + Shift + X on Windows).
+     - Click the three dots > "Install from VSIX..." and select the `.vsix` file.
+     - Restart VS Code if prompted.
 
 ## Troubleshooting
 
