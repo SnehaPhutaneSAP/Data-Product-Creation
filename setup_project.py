@@ -13,6 +13,18 @@ DEFAULT_TRANSFORMATION_SETUP_REPO = "https://github.tools.sap/bdc-fos/transforma
 DEFAULT_TRANSFORMATION_SETUP_BRANCH = "main"
 
 
+def command_name(base_name):
+    """Return the platform-specific executable name for shell helper commands."""
+    if os.name == "nt" and base_name in {"npm", "code"}:
+        return f"{base_name}.cmd"
+    return base_name
+
+
+def command_palette_shortcut():
+    """Return the appropriate VS Code command palette shortcut for the current OS."""
+    return "Ctrl+Shift+P" if os.name == "nt" else "Cmd+Shift+P"
+
+
 def check_prerequisites():
     """Check system prerequisites before running the setup."""
     print("Checking prerequisites...")
@@ -48,12 +60,15 @@ def check_prerequisites():
         print("Error: Docker is not installed or not running. Please install and start Docker Desktop from https://www.docker.com/get-started/")
         sys.exit(1)
 
-    try:
-        subprocess.run(["make", "--version"], check=True, capture_output=True)
-        print("✓ make is installed.")
-    except subprocess.CalledProcessError:
-        print("Error: make is not installed. Please install make before continuing.")
-        sys.exit(1)
+    if os.name != "nt":
+        try:
+            subprocess.run(["make", "--version"], check=True, capture_output=True)
+            print("✓ make is installed.")
+        except subprocess.CalledProcessError:
+            print("Error: make is not installed. Please install make before continuing.")
+            sys.exit(1)
+    else:
+        print("• make check skipped on Windows. The generated repository setup will continue without it.")
 
     print("All prerequisites are met.\n")
 
@@ -95,12 +110,15 @@ def apply_template_bootstrap_steps(repo_path, repo_name, author_name, author_ema
     else:
         print("Template step skipped: cookiecutter.json not found (this can be expected after bootstrap cleanup)")
 
-    if os.path.isfile(makefile_path):
+    make_executable = shutil.which("make")
+    if os.path.isfile(makefile_path) and make_executable:
         try:
-            subprocess.run(["make", "init"], check=True, cwd=repo_path)
+            subprocess.run([make_executable, "init"], check=True, cwd=repo_path)
             print("Template step complete: make init")
         except subprocess.CalledProcessError:
             print("Warning: make init failed. You can run it manually in the generated repository.")
+    elif os.path.isfile(makefile_path):
+        print("Template step skipped: make is not installed on this machine")
     else:
         print("Template step skipped: Makefile not found in generated repository")
 
@@ -202,11 +220,14 @@ def copy_transformer_template(script_dir, target_repo_path, repo_name):
 def open_repo_in_new_vscode_window(repo_path):
     """Open the generated repository in a new VS Code window if the CLI is available."""
     try:
-        subprocess.run(["code", "-n", repo_path], check=True, capture_output=True, text=True)
+        subprocess.run([command_name("code"), "-n", repo_path], check=True, capture_output=True, text=True)
         print(f"Opened generated project in a new VS Code window: {repo_path}")
     except FileNotFoundError:
         print("VS Code CLI ('code') was not found in PATH.")
-        print("In VS Code, run: Cmd+Shift+P -> 'Shell Command: Install code command in PATH', then rerun setup.")
+        print(
+            "In VS Code, run: "
+            f"{command_palette_shortcut()} -> 'Shell Command: Install code command in PATH', then rerun setup."
+        )
     except subprocess.CalledProcessError as error:
         print(f"Warning: Could not open VS Code automatically: {error}")
 
@@ -228,11 +249,19 @@ def install_local_vsix_extension(script_dir):
 
     vsix_path = os.path.join(script_dir, vsix_candidates[0])
     try:
-        subprocess.run(["code", "--install-extension", vsix_path], check=True, capture_output=True, text=True)
+        subprocess.run(
+            [command_name("code"), "--install-extension", vsix_path],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
         print(f"Installed CAPDerivedDataProducts extension from local VSIX: {vsix_path}")
     except FileNotFoundError:
         print("VSIX auto-install skipped: VS Code CLI ('code') is not available in PATH.")
-        print("Install it in VS Code via Cmd+Shift+P -> 'Shell Command: Install code command in PATH'.")
+        print(
+            "Install it in VS Code via "
+            f"{command_palette_shortcut()} -> 'Shell Command: Install code command in PATH'."
+        )
     except subprocess.CalledProcessError as error:
         print("VSIX auto-install failed. You can still install manually from VSIX in VS Code.")
         if error.stderr:
@@ -344,11 +373,12 @@ def main():
         print(f"Checked path: {transformation_setup_dir}")
         sys.exit(1)
 
-    os.chdir("transformation-setup")
-
     if not os.path.isdir(os.path.join(transformation_setup_dir, "node_modules")):
-        subprocess.run(["npm", "install"], check=True)
-    shutil.copy("template.env", ".env")
+        subprocess.run([command_name("npm"), "install"], check=True, cwd=transformation_setup_dir)
+    shutil.copy(
+        os.path.join(transformation_setup_dir, "template.env"),
+        os.path.join(transformation_setup_dir, ".env"),
+    )
 
     env_content = f"""GITHUB_ORG={github_org}
 GITHUB_REPO={repo_name}
@@ -364,17 +394,18 @@ GITHUB_BASE_URL=https://github.tools.sap
 DATALAKE_DIRNAME=datalake
 CLONE_REPO_NAME={repo_name}
 """
-    with open(".env", "w", encoding="utf-8") as file:
+    env_file_path = os.path.join(transformation_setup_dir, ".env")
+    with open(env_file_path, "w", encoding="utf-8") as file:
         file.write(env_content)
 
     try:
-        subprocess.run(["npm", "start"], check=True)
+        subprocess.run([command_name("npm"), "start"], check=True, cwd=transformation_setup_dir)
     except subprocess.CalledProcessError:
         print("npm start failed. This can happen because of Docker login issues, delayed repository availability, or devcontainer startup problems.")
         print("To fix:")
-        print("1. Check the .env file in transformation-setup/ and ensure SAP_ARTIFACTORY_URL is the correct Docker registry URL (not the web UI).")
+        print(f"1. Check the .env file at {env_file_path} and ensure SAP_ARTIFACTORY_URL is the correct Docker registry URL (not the web UI).")
         print("2. Confirm the generated repository path exists before devcontainer startup.")
-        print("3. Run 'npm start' manually in the transformation-setup/ directory after fixing.")
+        print(f"3. Run 'npm start' manually in {transformation_setup_dir} after fixing.")
         print("4. If issues persist, retry after a short delay or contact your Artifactory admin if the problem is registry-related.")
         return
 
@@ -392,9 +423,9 @@ CLONE_REPO_NAME={repo_name}
 
     print("Next steps:")
     print(f"1. Open EXACTLY this folder in VS Code: {target_repo_path}")
-    print("   (Cmd+Shift+P -> Dev Containers: Open Folder in Container -> select the path above)")
+    print(f"   ({command_palette_shortcut()} -> Dev Containers: Open Folder in Container -> select the path above)")
     print("   Important: open that specific folder, NOT its parent.")
-    print("2. Run Cmd+Shift+P -> Dev Containers: Rebuild Container.")
+    print(f"2. Run {command_palette_shortcut()} -> Dev Containers: Rebuild Container.")
     print("3. Git commit and push your bootstrapped files.")
     print("4. CAPDerivedDataProducts extension installation:")
     print("   - The script tries to auto-install from a local generatedpdfilesfromcds*.vsix file in this setup repository.")
