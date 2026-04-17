@@ -170,10 +170,8 @@ def command_palette_shortcut():
     return "Ctrl+Shift+P" if os.name == "nt" else "Cmd+Shift+P"
 
 
-def apply_windows_devcontainer_hotfix(transformation_setup_dir):
-    """Patch transformation-setup to avoid @devcontainers/cli image parsing failures on Windows."""
-    if os.name != "nt":
-        return
+def apply_devcontainer_service_hotfix(transformation_setup_dir):
+    """Patch transformation-setup to avoid @devcontainers/cli startup failures across OSes."""
 
     service_path = os.path.join(
         transformation_setup_dir,
@@ -183,15 +181,15 @@ def apply_windows_devcontainer_hotfix(transformation_setup_dir):
     )
 
     if not os.path.isfile(service_path):
-        print(f"Windows hotfix skipped: file not found: {service_path}")
+        print(f"Devcontainer service hotfix skipped: file not found: {service_path}")
         return
 
     try:
         with open(service_path, "w", encoding="utf-8", newline="\n") as service_file:
             service_file.write(HOTFIX_DEVCONTAINER_SERVICE_TS)
-        print("Applied Windows devcontainer hotfix in transformation-setup.")
+        print("Applied devcontainer service hotfix in transformation-setup.")
     except OSError as error:
-        print(f"Warning: could not apply Windows devcontainer hotfix: {error}")
+        print(f"Warning: could not apply devcontainer service hotfix: {error}")
 
 
 def check_prerequisites():
@@ -545,7 +543,7 @@ def main():
     if not os.path.isdir(os.path.join(transformation_setup_dir, "node_modules")):
         subprocess.run([command_name("npm"), "install"], check=True, cwd=transformation_setup_dir)
 
-    apply_windows_devcontainer_hotfix(transformation_setup_dir)
+    apply_devcontainer_service_hotfix(transformation_setup_dir)
 
     shutil.copy(
         os.path.join(transformation_setup_dir, "template.env"),
