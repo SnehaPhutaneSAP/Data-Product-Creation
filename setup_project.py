@@ -12,6 +12,151 @@ import requests
 DEFAULT_TRANSFORMATION_SETUP_REPO = "https://github.tools.sap/bdc-fos/transformations-setup.git"
 DEFAULT_TRANSFORMATION_SETUP_BRANCH = "main"
 
+HOTFIX_DEVCONTAINER_SERVICE_TS = r"""import {execFile} from 'child_process';
+import {promisify} from 'util';
+import * as path from 'path';
+import * as fs from 'fs';
+
+const execFileAsync = promisify(execFile);
+
+type DevcontainerConfig = {
+    build?: {
+        context?: string;
+        args?: Record<string, string>;
+    };
+    mounts?: string[];
+};
+
+export class DevcontainerService {
+    async upAndGetContainerId(projectPath: string): Promise<string> {
+        const devcontainerConfig = this.readDevcontainerConfig(projectPath);
+        const imageName = `devcontainer-${path.basename(projectPath)}-${Date.now()}`;
+
+        await this.buildImage(projectPath, devcontainerConfig, imageName);
+        return this.runContainer(projectPath, devcontainerConfig, imageName);
+    }
+
+    private readDevcontainerConfig(projectPath: string): DevcontainerConfig {
+        const devcontainerPath = path.join(projectPath, '.devcontainer', 'devcontainer.json');
+        const configContent = fs.readFileSync(devcontainerPath, 'utf8');
+        return JSON.parse(this.stripJsonComments(configContent)) as DevcontainerConfig;
+    }
+
+    private stripJsonComments(content: string): string {
+        return content.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, '');
+    }
+
+    private resolveTemplateValue(value: string, projectPath: string): string {
+        return value.replace(/\$\{([^}]+)\}/g, (_match, placeholder: string) => {
+            if (placeholder.startsWith('localEnv:')) {
+                const envVar = placeholder.slice('localEnv:'.length);
+                return process.env[envVar] ?? '';
+            }
+
+            if (placeholder === 'localWorkspaceFolderBasename') {
+                return path.basename(projectPath);
+            }
+
+            return '';
+        });
+    }
+
+    private async buildImage(projectPath: string, devcontainerConfig: DevcontainerConfig, imageName: string): Promise<void> {
+        const dockerfilePath = path.join(projectPath, '.devcontainer', 'Dockerfile');
+        const buildContext = path.resolve(projectPath, '.devcontainer', devcontainerConfig.build?.context ?? '.');
+        const buildArgs = devcontainerConfig.build?.args ?? {};
+        const dockerArgs = ['build', '-f', dockerfilePath, '-t', imageName];
+
+        for (const [argName, rawValue] of Object.entries(buildArgs)) {
+            dockerArgs.push('--build-arg', `${argName}=${this.resolveTemplateValue(rawValue, projectPath)}`);
+        }
+
+        dockerArgs.push(buildContext);
+        console.log(`Building image ${imageName}...`);
+        const {stdout, stderr} = await execFileAsync('docker', dockerArgs);
+        if (stdout) console.log(stdout);
+        if (stderr) console.error(stderr);
+    }
+
+    private parseMount(mountSpec: string, projectPath: string): string | null {
+        const entries = mountSpec.split(',').map((entry) => entry.trim()).filter(Boolean);
+        const mount = new Map<string, string>();
+
+        for (const entry of entries) {
+            const [key, ...valueParts] = entry.split('=');
+            if (!key || valueParts.length === 0) {
+                continue;
+            }
+            mount.set(key, this.resolveTemplateValue(valueParts.join('='), projectPath));
+        }
+
+        const type = mount.get('type') ?? 'volume';
+        const source = mount.get('source');
+        const target = mount.get('target');
+
+        if (!source || !target) {
+            return null;
+        }
+
+        if (type == 'bind' && !fs.existsSync(source)) {
+            throw new Error(`Configured bind mount source path does not exist: ${source}`);
+        }
+
+        const options = [`type=${type}`, `source=${source}`, `target=${target}`];
+        const consistency = mount.get('consistency');
+        if (consistency) {
+            options.push(`consistency=${consistency}`);
+        }
+
+        return options.join(',');
+    }
+
+    private async runContainer(projectPath: string, devcontainerConfig: DevcontainerConfig, imageName: string): Promise<string> {
+        const projectName = path.basename(projectPath);
+        const containerName = `devcontainer-${projectName}-${Date.now()}`;
+        const workspaceMount = `type=bind,source=${projectPath},target=/workspaces/${projectName}`;
+        const dockerSocketSource = process.platform === 'win32' ? '//var/run/docker.sock' : '/var/run/docker.sock';
+        const dockerArgs = [
+            'run',
+            '-d',
+            '--name',
+            containerName,
+            '--mount',
+            workspaceMount,
+            '--mount',
+            `type=bind,source=${dockerSocketSource},target=/var/run/docker.sock`,
+        ];
+
+        for (const mountSpec of devcontainerConfig.mounts ?? []) {
+            const parsedMount = this.parseMount(mountSpec, projectPath);
+            if (parsedMount) {
+                dockerArgs.push('--mount', parsedMount);
+            }
+        }
+
+        dockerArgs.push(imageName, 'tail', '-f', '/dev/null');
+        console.log(`Starting container ${containerName}...`);
+        const {stdout, stderr} = await execFileAsync('docker', dockerArgs);
+        if (stderr) console.error(stderr);
+
+        const containerId = stdout.trim();
+        if (!containerId) {
+            throw new Error('Docker run did not return a container ID.');
+        }
+
+        console.log(`Container started with ID: ${containerId}`);
+        return containerId;
+    }
+
+    async execInContainer(containerId: string, command: string): Promise<void> {
+        const {stdout, stderr} = await execFileAsync('docker', ['exec', containerId, 'sh', '-c', command]);
+        if (stdout) console.log(stdout);
+        if (stderr) console.error(stderr);
+        console.log(`Executed in devcontainer: ${command}`);
+    }
+}
+"""
+
 
 def command_name(base_name):
     """Return the platform-specific executable name for shell helper commands."""
@@ -23,6 +168,30 @@ def command_name(base_name):
 def command_palette_shortcut():
     """Return the appropriate VS Code command palette shortcut for the current OS."""
     return "Ctrl+Shift+P" if os.name == "nt" else "Cmd+Shift+P"
+
+
+def apply_windows_devcontainer_hotfix(transformation_setup_dir):
+    """Patch transformation-setup to avoid @devcontainers/cli image parsing failures on Windows."""
+    if os.name != "nt":
+        return
+
+    service_path = os.path.join(
+        transformation_setup_dir,
+        "src",
+        "services",
+        "devcontainer-service.ts",
+    )
+
+    if not os.path.isfile(service_path):
+        print(f"Windows hotfix skipped: file not found: {service_path}")
+        return
+
+    try:
+        with open(service_path, "w", encoding="utf-8", newline="\n") as service_file:
+            service_file.write(HOTFIX_DEVCONTAINER_SERVICE_TS)
+        print("Applied Windows devcontainer hotfix in transformation-setup.")
+    except OSError as error:
+        print(f"Warning: could not apply Windows devcontainer hotfix: {error}")
 
 
 def check_prerequisites():
@@ -375,6 +544,9 @@ def main():
 
     if not os.path.isdir(os.path.join(transformation_setup_dir, "node_modules")):
         subprocess.run([command_name("npm"), "install"], check=True, cwd=transformation_setup_dir)
+
+    apply_windows_devcontainer_hotfix(transformation_setup_dir)
+
     shutil.copy(
         os.path.join(transformation_setup_dir, "template.env"),
         os.path.join(transformation_setup_dir, ".env"),
