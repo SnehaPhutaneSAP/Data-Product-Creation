@@ -111,7 +111,49 @@ export class DevcontainerService {
         return options.join(',');
     }
 
+    private async sleep(ms: number): Promise<void> {
+        await new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    private async waitForBindMountPath(bindPath: string): Promise<void> {
+        const resolvedPath = fs.realpathSync(bindPath);
+
+        for (let attempt = 1; attempt <= 8; attempt++) {
+            try {
+                // Use a tiny throwaway container to verify Docker Desktop can mount the host path.
+                await execFileAsync('docker', [
+                    'run',
+                    '--rm',
+                    '--mount',
+                    `type=bind,source=${resolvedPath},target=/mnt/test`,
+                    'alpine:3.20',
+                    'sh',
+                    '-lc',
+                    'test -d /mnt/test',
+                ]);
+                return;
+            } catch (error) {
+                const message = String(error);
+                const isMissingBindPath = message.includes('bind source path does not exist');
+                if (!isMissingBindPath || attempt === 8) {
+                    throw new Error(
+                        `Docker cannot mount workspace path '${resolvedPath}'. ` +
+                        `If this path is under Desktop/iCloud, move the project under a local folder like ~/datalake and retry. Original error: ${message}`
+                    );
+                }
+
+                await this.sleep(1500);
+            }
+        }
+    }
+
     private async runContainer(projectPath: string, devcontainerConfig: DevcontainerConfig, imageName: string): Promise<string> {
+        if (!fs.existsSync(projectPath)) {
+            throw new Error(`Workspace path does not exist before docker run: ${projectPath}`);
+        }
+
+        await this.waitForBindMountPath(projectPath);
+
         const projectName = path.basename(projectPath);
         const containerName = `devcontainer-${projectName}-${Date.now()}`;
         const workspaceMount = `type=bind,source=${projectPath},target=/workspaces/${projectName}`;
@@ -157,6 +199,35 @@ export class DevcontainerService {
 }
 """
 
+HOTFIX_GITHUB_SERVICE_TS = r"""import simpleGit from 'simple-git';
+
+export class GithubService {
+    private git = simpleGit();
+    private readonly authToken: string;
+    private readonly baseUrl: string;
+
+    constructor() {
+        const token = process.env.GITHUB_AUTH_TOKEN;
+
+        if (!token) throw new Error('GITHUB_AUTH_TOKEN is not set in environment variables.');
+
+        this.authToken = token;
+        const baseUrl = process.env.GITHUB_BASE_URL;
+
+        if (!baseUrl) throw new Error('GITHUB_BASE_URL is not set in environment variables.');
+
+        this.baseUrl = baseUrl.replace(/\/$/, '');
+    }
+
+    async cloneRepo(org: string, repo: string, localPath: string): Promise<void> {
+        const repoUrl = `${this.baseUrl}/${org}/${repo}.git`;
+        const urlWithToken = repoUrl.replace(/^https:\/\//, `https://${this.authToken}@`);
+        await this.git.clone(urlWithToken, localPath);
+        console.log(`Repository cloned to ${localPath}`);
+    }
+}
+"""
+
 
 def command_name(base_name):
     """Return the platform-specific executable name for shell helper commands."""
@@ -190,6 +261,27 @@ def apply_devcontainer_service_hotfix(transformation_setup_dir):
         print("Applied devcontainer service hotfix in transformation-setup.")
     except OSError as error:
         print(f"Warning: could not apply devcontainer service hotfix: {error}")
+
+
+def apply_github_service_hotfix(transformation_setup_dir):
+    """Patch transformation-setup so clone errors are not swallowed and hidden."""
+    service_path = os.path.join(
+        transformation_setup_dir,
+        "src",
+        "services",
+        "github-service.ts",
+    )
+
+    if not os.path.isfile(service_path):
+        print(f"Github service hotfix skipped: file not found: {service_path}")
+        return
+
+    try:
+        with open(service_path, "w", encoding="utf-8", newline="\n") as service_file:
+            service_file.write(HOTFIX_GITHUB_SERVICE_TS)
+        print("Applied github service hotfix in transformation-setup.")
+    except OSError as error:
+        print(f"Warning: could not apply github service hotfix: {error}")
 
 
 def check_prerequisites():
@@ -544,6 +636,7 @@ def main():
         subprocess.run([command_name("npm"), "install"], check=True, cwd=transformation_setup_dir)
 
     apply_devcontainer_service_hotfix(transformation_setup_dir)
+    apply_github_service_hotfix(transformation_setup_dir)
 
     shutil.copy(
         os.path.join(transformation_setup_dir, "template.env"),
