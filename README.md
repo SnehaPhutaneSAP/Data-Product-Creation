@@ -24,7 +24,7 @@ Ensure the following are installed and configured:
 
 ## Quick Start
 
-1. Clone or navigate to this repository.
+1. Clone or navigate to this repository.  (keep the location of the /users folder directly)
 
 2. Create and activate a virtual environment (recommended):
 ```bash
@@ -50,13 +50,13 @@ python3 setup_project.py
 ```
 
 3. Provide values for prompts:
-   - GitHub organization name (or your username for personal repos)
+   - GitHub organization name (or your username for personal repos) (no caps for repo name, no _) 
    - New repository name (alphabets, numbers, hyphens only)
    - Local path for cloning the project
    - GitHub access token
    - SAP Artifactory Docker registry URL (e.g., https://artifactory.company.com)
    - SAP Artifactory username
-   - SAP Artifactory password
+   - SAP Artifactory Token
    - Author name
    - Author email
 
