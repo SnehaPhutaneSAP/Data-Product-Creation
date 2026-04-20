@@ -24,29 +24,70 @@ Ensure the following are installed and configured:
 
 ## Quick Start
 
-1. Clone or navigate to this repository.  (keep the location of the /users folder directly)
+1. Clone or navigate to this repository. (keep the location of the /users folder directly)
 
 2. Create and activate a virtual environment (recommended):
+
+**macOS / Linux:**
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
+**Windows:**
+```cmd
+python -m venv venv
+venv\Scripts\activate
+```
+
 3. Install Python dependencies:
+
+**macOS / Linux:**
 ```bash
 python3 -m pip install -r requirements.txt
+```
+
+**Windows:**
+```cmd
+python -m pip install -r requirements.txt
+```
+
+4. Run the setup script:
+
+**macOS / Linux:**
+```bash
+python3 setup_project.py
+```
+
+**Windows:**
+```cmd
+python setup_project.py
 ```
 
 ## Usage
 
 1. Activate the virtual environment (if not already active):
+
+**macOS / Linux:**
 ```bash
 source venv/bin/activate
 ```
 
+**Windows:**
+```cmd
+venv\Scripts\activate
+```
+
 2. Run the script:
+
+**macOS / Linux:**
 ```bash
 python3 setup_project.py
+```
+
+**Windows:**
+```cmd
+python setup_project.py
 ```
 
 3. Provide values for prompts:
