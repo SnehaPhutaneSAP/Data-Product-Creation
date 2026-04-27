@@ -1,14 +1,23 @@
 # Data Engineering Project Bootstrap Script
 
-This repository provides a Python automation script, `setup_project.py`, to create and bootstrap a new Data Engineering project from the `bdc-fos/data-engineering-project-bootstrap-template`.
+This repository provides a Python automation script, `setup_project.py`, to create and bootstrap a new Data Engineering project from the `I758889/lob-onestop-shop-bootsrap-template` template.
 
-The script covers:
-- Repository creation from template
+## Key Features
+
+✨ **Fully Automated Setup**
+- Installs Python dependencies automatically (no separate `pip install` needed)
+- Validates repository names (lowercase, numbers, hyphens only)
+- Sets SAP Artifactory URL automatically (no manual input required)
+- Fills `cookiecutter.json` with project values automatically
+- Copies base classes and generates transformer templates
+
+**Complete Workflow**
+- Repository creation from template via GitHub API
 - Transformation setup bootstrap (`npm start` flow)
-- Template prep steps (`cookiecutter` + `make init` when available)
-- Clear next steps for VS Code Dev Containers and FOS task execution
-- Copying of `ddp_template_base_class` (base classes for pro-code derived data product transformations) into the generated repository
-- Generating a ready-to-use transformer script from the template, renamed and with imports updated to match the new repository name
+- Dev container configuration and build
+- Bootstrap script execution inside container
+- Base class and transformer template setup
+- Clear guidance for VS Code and FOS task execution
 
 ## Prerequisites
 
@@ -20,13 +29,13 @@ Ensure the following are installed and configured:
 - **Docker Desktop**: Download and install from [https://www.docker.com/get-started/](https://www.docker.com/get-started/). Ensure it's running.
 - **make**: Required for `make init` during template bootstrap.
 - **VS Code**: Required for installing the CAPDerivedDataProducts extension. Download from [https://code.visualstudio.com/](https://code.visualstudio.com/). Ensure the CLI is available (`code` command).
-- **GitHub Access Token**: Create a personal access token with repo permissions from your GitHub Enterprise instance (e.g., https://github.tools.sap/settings/tokens). This token must have access to the bdc-fos organization and the template repository.
+- **GitHub Access Token**: Create a personal access token with repo permissions from your GitHub Enterprise instance (e.g., https://github.tools.sap/settings/tokens). This token must have access to the I758889 organization and the template repository.
 
 ## Quick Start
 
-1. Clone or navigate to this repository. (keep the location of the /users folder directly)
+1. Clone or navigate to this repository.
 
-2. Create and activate a virtual environment (recommended):
+2. Create and activate a virtual environment:
 
 **macOS / Linux:**
 ```bash
@@ -40,19 +49,7 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
-3. Install Python dependencies:
-
-**macOS / Linux:**
-```bash
-python3 -m pip install -r requirements.txt
-```
-
-**Windows:**
-```cmd
-python -m pip install -r requirements.txt
-```
-
-4. Run the setup script:
+3. Run the setup script (that's it!):
 
 **macOS / Linux:**
 ```bash
@@ -63,6 +60,8 @@ python3 setup_project.py
 ```cmd
 python setup_project.py
 ```
+
+> **Note**: Python dependencies are installed automatically at startup. No manual `pip install` needed.
 
 ## Usage
 
@@ -90,34 +89,45 @@ python3 setup_project.py
 python setup_project.py
 ```
 
-3. Provide values for prompts:
-   - GitHub organization name (or your username for personal repos) (no caps for repo name, no _) 
-   - New repository name (alphabets, numbers, hyphens only)
-   - Local path for cloning the project
-   - GitHub access token
-   - SAP Artifactory Docker registry URL (e.g., https://artifactory.company.com)
-   - SAP Artifactory username
-   - SAP Artifactory Token
-   - Author name
-   - Author email
+3. Answer the prompts:
+   - **GitHub organization** (or your username for personal repos)
+   - **Repository name** (lowercase letters, numbers, and hyphens only)
+   - **Local path** for cloning (recommended: `~/datalake` or `~/projects`)
+     - ⚠️ macOS users: Avoid nested paths like `./local/` or `./local2/`. Use simple paths for Docker Desktop compatibility.
+   - **GitHub access token** (with repo creation permissions)
+   - **SAP Artifactory username**
+   - **SAP Artifactory password/token**
+   - **Author name** and **email**
+
+**Automatic Setup** (no input required):
+- SAP Artifactory Docker registry URL: `common.repositories.cloud.sap`
+- Python dependencies installation
+- Repository name validation
+- Docker path validation
 
 ## What the Script Does
 
-The script will:
-- Check all prerequisites.
-- Create a new repository from the template.
-- Clone and configure the setup tool.
-- Run the automated setup.
-- Apply template bootstrap prep in the generated repository:
-   - Copy `cookiecutter-template.json` to `cookiecutter.json`.
-   - Fill `cookiecutter.json` with your project values.
-   - Run `make init`.
-- Copy `ddp_template_base_class/` into the root of the generated repository.
-   - This folder contains `base_class.py` and `ddp_base_transformation.py`, which provide the base classes required for the pro-code derived data product transformation approach.
-- Generate a transformer script under `transformers/` in the generated repository.
-   - The script is created from the `derived_sales_contract_transformation.py` template in this repository.
-   - It is renamed to `<repo_name>_transformation.py` (hyphens replaced with underscores).
-   - All imports that previously referenced `bdc_ia_ddproducts` are updated to reference the new package name derived from the repository name.
+**Preparation Phase**
+- ✓ Validates all system prerequisites (Python, Git, Node.js, Docker, make)
+- ✓ Installs Python dependencies automatically
+- ✓ Validates repository name format
+
+**Repository Setup**
+- ✓ Creates a new GitHub repository from the template
+- ✓ Clones transformation-setup for dev container bootstrap
+- ✓ Applies Docker networking hotfixes
+
+**Dev Container Bootstrap**
+- ✓ Builds and starts Docker dev container
+- ✓ Fills `cookiecutter.json` with your project values
+- ✓ Runs `make init` (if available)
+
+**Post-Bootstrap**
+- ✓ Copies `ddp_template_base_class/` (base classes for pro-code transformations)
+- ✓ Generates a ready-to-use transformer script:
+  - Created from `derived_sales_contract_transformation.py` template
+  - Renamed to `<repo_name>_transformation.py`
+  - Imports automatically updated to match your repository name
 
 ## Repository Structure (this repo)
 
@@ -172,6 +182,10 @@ After the script completes:
 - The script validates prerequisites automatically and will exit with errors if any are missing.
 - If Docker login fails, verify you used the Docker registry host (not the Artifactory web UI URL).
 - If template prep lines are shown as skipped, that can be expected when bootstrap cleanup already removed template files in the generated repo.
+- **Docker mount errors on macOS** (error: "bind source path does not exist"):
+  - **Recommended**: Re-run the script and use `~/datalake` as the clone path.
+  - **Alternative**: Share the project folder in Docker Desktop > Preferences > Resources > File Sharing, then retry.
+  - Do NOT use nested paths like `./local/` or `./local2/` under the script directory.
 
 ## Requirements
 

@@ -1,16 +1,21 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import time
 from urllib.parse import urlparse
 
-import requests
+try:
+    import requests
+except ModuleNotFoundError:
+    requests = None
 
 
 DEFAULT_TRANSFORMATION_SETUP_REPO = "https://github.tools.sap/bdc-fos/transformations-setup.git"
 DEFAULT_TRANSFORMATION_SETUP_BRANCH = "main"
+DEFAULT_SAP_ARTIFACTORY_REGISTRY = "common.repositories.cloud.sap"
 
 HOTFIX_DEVCONTAINER_SERVICE_TS = r"""import {execFile} from 'child_process';
 import {promisify} from 'util';
@@ -228,6 +233,50 @@ export class GithubService {
 }
 """
 
+HOTFIX_FILE_EDITOR_SERVICE_TS = r"""import * as path from 'path';
+import * as fs from 'fs';
+
+const hyphenToUnderscore = (str: string) => str.replace(/-/g, '_');
+
+export class FileEditorService {
+    // Fill cookiecutter.json directly and fallback to cookiecutter-template.json when needed.
+    fillCookiecutterTemplate(repoPath: string, repoName: string): void {
+        const cookiecutterPath = path.join(repoPath, 'cookiecutter.json');
+        const templatePath = path.join(repoPath, 'cookiecutter-template.json');
+
+        let sourcePath = cookiecutterPath;
+        if (!fs.existsSync(sourcePath)) {
+            sourcePath = templatePath;
+        }
+
+        if (!fs.existsSync(sourcePath)) {
+            console.warn(`Cookiecutter file not found: ${cookiecutterPath} or ${templatePath}`);
+            return;
+        }
+
+        const data = JSON.parse(fs.readFileSync(sourcePath, 'utf-8'));
+        data.project_name = repoName;
+        data.package_name = hyphenToUnderscore(repoName);
+
+        // Fill from env if present
+        if (process.env.COOKIECUTTER_AUTHOR_NAME)
+            data.author_name = process.env.COOKIECUTTER_AUTHOR_NAME;
+
+        if (process.env.COOKIECUTTER_AUTHOR_EMAIL)
+            data.author_email = process.env.COOKIECUTTER_AUTHOR_EMAIL;
+
+        if (process.env.COOKIECUTTER_PROJECT_DESCRIPTION)
+            data.project_description = process.env.COOKIECUTTER_PROJECT_DESCRIPTION;
+
+        if (process.env.COOKIECUTTER_PYTHON_VERSION)
+            data.python_version = process.env.COOKIECUTTER_PYTHON_VERSION;
+
+        fs.writeFileSync(cookiecutterPath, JSON.stringify(data, null, 2));
+        console.log(`cookiecutter.json written to ${cookiecutterPath}`);
+    }
+}
+"""
+
 
 def command_name(base_name):
     """Return the platform-specific executable name for shell helper commands."""
@@ -239,6 +288,52 @@ def command_name(base_name):
 def command_palette_shortcut():
     """Return the appropriate VS Code command palette shortcut for the current OS."""
     return "Ctrl+Shift+P" if os.name == "nt" else "Cmd+Shift+P"
+
+
+def prompt_repo_name():
+    """Prompt until a valid repository name is provided.
+
+    Allowed characters: lowercase letters, numbers, and hyphens.
+    """
+    pattern = re.compile(r"^[a-z0-9-]+$")
+    while True:
+        repo_name = input("Enter new repository name (lowercase letters, numbers, hyphens only): ").strip()
+
+        if pattern.fullmatch(repo_name):
+            return repo_name
+
+        print("Invalid repository name.")
+        print("Allowed: lowercase letters (a-z), numbers (0-9), and hyphens (-).")
+        print("Not allowed: capital letters, underscores (_), spaces, or other special characters.")
+        print("Please re-enter the repository name.")
+
+
+def ensure_python_requirements(script_dir):
+    """Install Python dependencies from requirements.txt using the current interpreter."""
+    requirements_file = os.path.join(script_dir, "requirements.txt")
+    if not os.path.isfile(requirements_file):
+        print(f"Warning: requirements.txt not found at {requirements_file}. Continuing without auto-install.")
+    else:
+        print("Installing Python dependencies from requirements.txt...")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", requirements_file],
+                check=True,
+            )
+            print("✓ Python dependencies are installed.")
+        except subprocess.CalledProcessError:
+            print("Error: Failed to install Python dependencies from requirements.txt.")
+            sys.exit(1)
+
+    global requests
+    if requests is None:
+        try:
+            import requests as requests_module
+
+            requests = requests_module
+        except ModuleNotFoundError:
+            print("Error: 'requests' is not available after dependency installation.")
+            sys.exit(1)
 
 
 def apply_devcontainer_service_hotfix(transformation_setup_dir):
@@ -282,6 +377,27 @@ def apply_github_service_hotfix(transformation_setup_dir):
         print("Applied github service hotfix in transformation-setup.")
     except OSError as error:
         print(f"Warning: could not apply github service hotfix: {error}")
+
+
+def apply_file_editor_service_hotfix(transformation_setup_dir):
+    """Patch transformation-setup to fill cookiecutter.json directly."""
+    service_path = os.path.join(
+        transformation_setup_dir,
+        "src",
+        "services",
+        "file-editor-service.ts",
+    )
+
+    if not os.path.isfile(service_path):
+        print(f"File editor service hotfix skipped: file not found: {service_path}")
+        return
+
+    try:
+        with open(service_path, "w", encoding="utf-8", newline="\n") as service_file:
+            service_file.write(HOTFIX_FILE_EDITOR_SERVICE_TS)
+        print("Applied file editor service hotfix in transformation-setup.")
+    except OSError as error:
+        print(f"Warning: could not apply file editor service hotfix: {error}")
 
 
 def check_prerequisites():
@@ -339,15 +455,8 @@ def apply_template_bootstrap_steps(repo_path, repo_name, author_name, author_ema
         print(f"Skipping template bootstrap prep: generated repository not found at {repo_path}")
         return
 
-    cookiecutter_template = os.path.join(repo_path, "cookiecutter-template.json")
     cookiecutter_file = os.path.join(repo_path, "cookiecutter.json")
     makefile_path = os.path.join(repo_path, "Makefile")
-
-    if os.path.isfile(cookiecutter_template):
-        shutil.copy(cookiecutter_template, cookiecutter_file)
-        print("Template step complete: copied cookiecutter-template.json to cookiecutter.json")
-    else:
-        print("Template step skipped: cookiecutter-template.json not found (this can be expected after bootstrap cleanup)")
 
     if os.path.isfile(cookiecutter_file):
         try:
@@ -367,7 +476,7 @@ def apply_template_bootstrap_steps(repo_path, repo_name, author_name, author_ema
         except (OSError, json.JSONDecodeError) as error:
             print(f"Warning: could not update cookiecutter.json automatically: {error}")
     else:
-        print("Template step skipped: cookiecutter.json not found (this can be expected after bootstrap cleanup)")
+        print("Template step skipped: cookiecutter.json not found")
 
     make_executable = shutil.which("make")
     if os.path.isfile(makefile_path) and make_executable:
@@ -491,6 +600,29 @@ def open_repo_in_new_vscode_window(repo_path):
         print(f"Warning: Could not open VS Code automatically: {error}")
 
 
+def validate_docker_mount_path(clone_path, repo_name):
+    """Warn if the clone path may have Docker mount issues on macOS."""
+    import platform
+    if platform.system() != "Darwin":
+        return
+    
+    home_dir = os.path.expanduser("~")
+    
+    # Check if path is nested under testbootstrap_sp or other project setup directories
+    if "testbootstrap_sp" in clone_path or "Data-Product-Creation" in clone_path:
+        print("\n⚠️  WARNING: Docker Desktop on macOS mount compatibility issue detected.")
+        print(f"   Current path: {clone_path}")
+        print("   Paths nested under project setup directories may not mount properly in Docker Desktop.")
+        print(f"\n   Recommended solutions (in order of preference):")
+        print(f"   1. Use: ~/datalake/{repo_name}")
+        print(f"   2. Use: ~/projects/{repo_name}")
+        print(f"   3. Share the parent folder in Docker Desktop:")
+        print(f"      - Open Docker Desktop > Preferences")
+        print(f"      - Go to Resources > File Sharing")
+        print(f"      - Add: {os.path.dirname(clone_path)}")
+        print(f"      - Click Apply & restart\n")
+
+
 def install_local_vsix_extension(script_dir):
     """Install CAPDerivedDataProducts VSIX from the setup repository when available."""
     vsix_candidates = sorted(
@@ -529,17 +661,16 @@ def install_local_vsix_extension(script_dir):
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    ensure_python_requirements(script_dir)
     check_prerequisites()
 
     github_org = input("Enter GitHub organization name (or your username for personal repos): ").strip()
-    repo_name = input("Enter new repository name (alphabets, numbers, hyphens): ").strip()
+    repo_name = prompt_repo_name()
 
     clone_local_path = os.path.expanduser(input("Enter local path for cloning the project: ").strip())
 
     github_token = input("Enter GitHub access token: ").strip()
-    sap_artifactory_url = input(
-        "Enter SAP Artifactory Docker registry URL (e.g., bdc-content-factory-docker-testing.common.repositories.cloud.sap): "
-    ).strip()
+    sap_artifactory_url = DEFAULT_SAP_ARTIFACTORY_REGISTRY
     artifactory_user = input("Enter SAP Artifactory username: ").strip()
     artifactory_password = input("Enter SAP Artifactory password: ").strip()
     author_name = input("Enter author name: ").strip()
@@ -561,7 +692,7 @@ def main():
     sap_artifactory_url = normalize_artifactory_registry(sap_artifactory_url)
     print(f"✓ Using SAP Artifactory Docker registry host: {sap_artifactory_url}")
 
-    url = "https://github.tools.sap/api/v3/repos/bdc-fos/data-engineering-project-bootstrap-template/generate"
+    url = "https://github.tools.sap/api/v3/repos/I758889/lob-onestop-shop-bootsrap-template/generate"
     headers = {
         "Authorization": f"token {github_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -584,6 +715,7 @@ def main():
     print("✓ New repository is cloneable.")
 
     target_base_path = os.path.abspath(clone_local_path)
+    validate_docker_mount_path(target_base_path, repo_name)
     target_repo_path = os.path.join(target_base_path, repo_name)
     os.makedirs(target_base_path, exist_ok=True)
 
@@ -637,6 +769,7 @@ def main():
 
     apply_devcontainer_service_hotfix(transformation_setup_dir)
     apply_github_service_hotfix(transformation_setup_dir)
+    apply_file_editor_service_hotfix(transformation_setup_dir)
 
     shutil.copy(
         os.path.join(transformation_setup_dir, "template.env"),
@@ -664,12 +797,20 @@ CLONE_REPO_NAME={repo_name}
     try:
         subprocess.run([command_name("npm"), "start"], check=True, cwd=transformation_setup_dir)
     except subprocess.CalledProcessError:
-        print("npm start failed. This can happen because of Docker login issues, delayed repository availability, or devcontainer startup problems.")
-        print("To fix:")
-        print(f"1. Check the .env file at {env_file_path} and ensure SAP_ARTIFACTORY_URL is the correct Docker registry URL (not the web UI).")
-        print("2. Confirm the generated repository path exists before devcontainer startup.")
-        print(f"3. Run 'npm start' manually in {transformation_setup_dir} after fixing.")
-        print("4. If issues persist, retry after a short delay or contact your Artifactory admin if the problem is registry-related.")
+        print("\n❌ npm start failed.\n")
+        print("Most common causes and solutions:\n")
+        print("1. DOCKER MOUNT ISSUE (macOS)")
+        print(f"   If error mentions 'bind source path does not exist':")
+        print(f"   - Re-run with: ~/datalake/{repo_name} as the clone path")
+        print(f"   - OR share the folder in Docker Desktop > Preferences > Resources > File Sharing")
+        print(f"   - Then retry\n")
+        print("2. ARTIFACTORY DOCKER REGISTRY")
+        print(f"   - Check .env file: {env_file_path}")
+        print(f"   - Verify SAP_ARTIFACTORY_URL is correct (not a web UI URL)")
+        print(f"   - Should be: common.repositories.cloud.sap\n")
+        print("3. RETRY")
+        print(f"   - Run 'npm start' manually in {transformation_setup_dir}")
+        print(f"   - Wait a minute and retry (delayed repository access is common)\n")
         return
 
     apply_template_bootstrap_steps(target_repo_path, repo_name, author_name, author_email)
