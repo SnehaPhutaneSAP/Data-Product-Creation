@@ -49,7 +49,20 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
-3. Run the setup script (that's it!):
+3. Create a local `.env` file in the repository root.
+  You can copy `.env.example` and fill in the values:
+
+```dotenv
+GITHUB_ORG=your-github-org-or-user
+GITHUB_AUTH_TOKEN=your-github-token
+ARTIFACTORY_USER=your-artifactory-user
+ARTIFACTORY_PASSWORD=your-artifactory-password-or-token
+SAP_ARTIFACTORY_URL=common.repositories.cloud.sap
+AUTHOR_NAME=Your Name
+AUTHOR_EMAIL=your.name@example.com
+```
+
+4. Run the setup script:
 
 **macOS / Linux:**
 ```bash
@@ -77,19 +90,7 @@ source venv/bin/activate
 venv\Scripts\activate
 ```
 
-2. Run the script:
-
-**macOS / Linux:**
-```bash
-python3 setup_project.py
-```
-
-**Windows:**
-```cmd
-python setup_project.py
-```
-
-3. Create a local `.env` file in the repository root before running the script.
+2. Create a local `.env` file in the repository root before running the script.
   You can copy `.env.example` and fill in the values:
 
 ```dotenv
@@ -100,6 +101,18 @@ ARTIFACTORY_PASSWORD=your-artifactory-password-or-token
 SAP_ARTIFACTORY_URL=common.repositories.cloud.sap
 AUTHOR_NAME=Your Name
 AUTHOR_EMAIL=your.name@example.com
+```
+
+3. Run the script:
+
+**macOS / Linux:**
+```bash
+python3 setup_project.py
+```
+
+**Windows:**
+```cmd
+python setup_project.py
 ```
 
 4. Answer the remaining prompts:
