@@ -16,6 +16,7 @@ except ModuleNotFoundError:
 DEFAULT_TRANSFORMATION_SETUP_REPO = "https://github.tools.sap/bdc-fos/transformations-setup.git"
 DEFAULT_TRANSFORMATION_SETUP_BRANCH = "main"
 DEFAULT_SAP_ARTIFACTORY_REGISTRY = "common.repositories.cloud.sap"
+ROOT_ENV_FILE_NAME = ".env"
 
 HOTFIX_DEVCONTAINER_SERVICE_TS = r"""import {execFile} from 'child_process';
 import {promisify} from 'util';
@@ -308,6 +309,51 @@ def prompt_repo_name():
         print("Please re-enter the repository name.")
 
 
+def load_env_file(env_file_path):
+    """Load KEY=VALUE pairs from a simple .env file into a dictionary."""
+    values = {}
+
+    try:
+        with open(env_file_path, "r", encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                if "=" not in line:
+                    continue
+
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+
+                if not key:
+                    continue
+
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+                    value = value[1:-1]
+
+                values[key] = value
+    except OSError as error:
+        print(f"Error: Could not read environment file '{env_file_path}': {error}")
+        sys.exit(1)
+
+    return values
+
+
+def require_env_values(env_values, required_keys, env_file_path):
+    """Return required environment values or exit with a clear error."""
+    missing_keys = [key for key in required_keys if not env_values.get(key, "").strip()]
+    if missing_keys:
+        print(f"Error: Missing required values in {env_file_path}:")
+        for key in missing_keys:
+            print(f"- {key}")
+        print("Fill the missing values in the .env file and rerun the script.")
+        sys.exit(1)
+
+    return {key: env_values[key].strip() for key in required_keys}
+
+
 def ensure_python_requirements(script_dir):
     """Install Python dependencies from requirements.txt using the current interpreter."""
     requirements_file = os.path.join(script_dir, "requirements.txt")
@@ -448,7 +494,15 @@ def check_prerequisites():
     print("All prerequisites are met.\n")
 
 
-def apply_template_bootstrap_steps(repo_path, repo_name, author_name, author_email):
+def apply_template_bootstrap_steps(
+    repo_path,
+    repo_name,
+    author_name,
+    author_email,
+    artifactory_user,
+    artifactory_password,
+    sap_artifactory_url,
+):
     """Apply template bootstrap preparation steps in the generated repository."""
     print("Running template bootstrap preparation in generated repository...")
     if not os.path.isdir(repo_path):
@@ -478,10 +532,20 @@ def apply_template_bootstrap_steps(repo_path, repo_name, author_name, author_ema
     else:
         print("Template step skipped: cookiecutter.json not found")
 
+    patch_generated_repo_artifactory_config(repo_path, sap_artifactory_url)
+
     make_executable = shutil.which("make")
     if os.path.isfile(makefile_path) and make_executable:
         try:
-            subprocess.run([make_executable, "init"], check=True, cwd=repo_path)
+            make_env = os.environ.copy()
+            make_env.update(
+                {
+                    "ARTIFACTORY_USER": artifactory_user,
+                    "ARTIFACTORY_PASSWORD": artifactory_password,
+                    "SAP_ARTIFACTORY_URL": sap_artifactory_url,
+                }
+            )
+            subprocess.run([make_executable, "init"], check=True, cwd=repo_path, env=make_env)
             print("Template step complete: make init")
         except subprocess.CalledProcessError:
             print("Warning: make init failed. You can run it manually in the generated repository.")
@@ -489,6 +553,44 @@ def apply_template_bootstrap_steps(repo_path, repo_name, author_name, author_ema
         print("Template step skipped: make is not installed on this machine")
     else:
         print("Template step skipped: Makefile not found in generated repository")
+
+
+def patch_generated_repo_artifactory_config(repo_path, sap_artifactory_url):
+    """Patch generated repo files that still reference the legacy Artifactory registry."""
+    legacy_registry_host = "bdc-fos-docker-jenkins.int.repositories.cloud.sap"
+    makefile_path = os.path.join(repo_path, "Makefile")
+    dockerfile_path = os.path.join(repo_path, ".devcontainer", "Dockerfile")
+
+    if os.path.isfile(makefile_path):
+        try:
+            with open(makefile_path, "r", encoding="utf-8") as file:
+                makefile_content = file.read()
+
+            updated_makefile_content = makefile_content.replace(
+                f"\tdocker login {legacy_registry_host}",
+                "\tprintf '%s\\n' \"$$ARTIFACTORY_PASSWORD\" | docker login \"$$SAP_ARTIFACTORY_URL\" --username \"$$ARTIFACTORY_USER\" --password-stdin",
+            )
+
+            if updated_makefile_content != makefile_content:
+                with open(makefile_path, "w", encoding="utf-8", newline="\n") as file:
+                    file.write(updated_makefile_content)
+                print("Patched generated Makefile to use non-interactive Artifactory login.")
+        except OSError as error:
+            print(f"Warning: could not patch generated Makefile: {error}")
+
+    if os.path.isfile(dockerfile_path):
+        try:
+            with open(dockerfile_path, "r", encoding="utf-8") as file:
+                dockerfile_content = file.read()
+
+            updated_dockerfile_content = dockerfile_content.replace(legacy_registry_host, sap_artifactory_url)
+
+            if updated_dockerfile_content != dockerfile_content:
+                with open(dockerfile_path, "w", encoding="utf-8", newline="\n") as file:
+                    file.write(updated_dockerfile_content)
+                print(f"Patched generated Dockerfile to use registry host: {sap_artifactory_url}")
+        except OSError as error:
+            print(f"Warning: could not patch generated Dockerfile: {error}")
 
 
 def owner_exists(owner_name, github_token):
@@ -664,17 +766,37 @@ def main():
     ensure_python_requirements(script_dir)
     check_prerequisites()
 
-    github_org = input("Enter GitHub organization name (or your username for personal repos): ").strip()
+    root_env_path = os.path.join(script_dir, ROOT_ENV_FILE_NAME)
+    if not os.path.isfile(root_env_path):
+        print(f"Error: Missing {ROOT_ENV_FILE_NAME} file at {root_env_path}")
+        print("Create it from .env.example, fill in the credential values, and rerun the script.")
+        sys.exit(1)
+
+    root_env_values = load_env_file(root_env_path)
+    required_env = require_env_values(
+        root_env_values,
+        [
+            "GITHUB_ORG",
+            "GITHUB_AUTH_TOKEN",
+            "ARTIFACTORY_USER",
+            "ARTIFACTORY_PASSWORD",
+            "AUTHOR_NAME",
+            "AUTHOR_EMAIL",
+        ],
+        root_env_path,
+    )
+
+    github_org = required_env["GITHUB_ORG"]
     repo_name = prompt_repo_name()
 
     clone_local_path = os.path.expanduser(input("Enter local path for cloning the project: ").strip())
 
-    github_token = input("Enter GitHub access token: ").strip()
-    sap_artifactory_url = DEFAULT_SAP_ARTIFACTORY_REGISTRY
-    artifactory_user = input("Enter SAP Artifactory username: ").strip()
-    artifactory_password = input("Enter SAP Artifactory password: ").strip()
-    author_name = input("Enter author name: ").strip()
-    author_email = input("Enter author email: ").strip()
+    github_token = required_env["GITHUB_AUTH_TOKEN"]
+    sap_artifactory_url = root_env_values.get("SAP_ARTIFACTORY_URL", DEFAULT_SAP_ARTIFACTORY_REGISTRY).strip()
+    artifactory_user = required_env["ARTIFACTORY_USER"]
+    artifactory_password = required_env["ARTIFACTORY_PASSWORD"]
+    author_name = required_env["AUTHOR_NAME"]
+    author_email = required_env["AUTHOR_EMAIL"]
 
     test_url = "https://github.tools.sap/api/v3/user"
     test_headers = {"Authorization": f"token {github_token}"}
@@ -813,7 +935,15 @@ CLONE_REPO_NAME={repo_name}
         print(f"   - Wait a minute and retry (delayed repository access is common)\n")
         return
 
-    apply_template_bootstrap_steps(target_repo_path, repo_name, author_name, author_email)
+    apply_template_bootstrap_steps(
+        target_repo_path,
+        repo_name,
+        author_name,
+        author_email,
+        artifactory_user,
+        artifactory_password,
+        sap_artifactory_url,
+    )
     copy_ddp_template_base_class(script_dir, target_repo_path)
     copy_transformer_template(script_dir, target_repo_path, repo_name)
 

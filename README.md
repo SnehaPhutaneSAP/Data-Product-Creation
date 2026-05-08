@@ -89,21 +89,31 @@ python3 setup_project.py
 python setup_project.py
 ```
 
-3. Answer the prompts:
-   - **GitHub organization** (or your username for personal repos)
+3. Create a local `.env` file in the repository root before running the script.
+  You can copy `.env.example` and fill in the values:
+
+```dotenv
+GITHUB_ORG=your-github-org-or-user
+GITHUB_AUTH_TOKEN=your-github-token
+ARTIFACTORY_USER=your-artifactory-user
+ARTIFACTORY_PASSWORD=your-artifactory-password-or-token
+SAP_ARTIFACTORY_URL=common.repositories.cloud.sap
+AUTHOR_NAME=Your Name
+AUTHOR_EMAIL=your.name@example.com
+```
+
+4. Answer the remaining prompts:
    - **Repository name** (lowercase letters, numbers, and hyphens only)
    - **Local path** for cloning (recommended: `~/datalake` or `~/projects`)
      - ⚠️ macOS users: Avoid nested paths like `./local/` or `./local2/`. Use simple paths for Docker Desktop compatibility.
-   - **GitHub access token** (with repo creation permissions)
-   - **SAP Artifactory username**
-   - **SAP Artifactory password/token**
-   - **Author name** and **email**
 
 **Automatic Setup** (no input required):
 - SAP Artifactory Docker registry URL: `common.repositories.cloud.sap`
 - Python dependencies installation
 - Repository name validation
 - Docker path validation
+- GitHub and Artifactory credential loading from `.env`
+- Stable defaults such as GitHub owner and author details from `.env`
 
 ## What the Script Does
 
@@ -124,6 +134,7 @@ python setup_project.py
 
 **Post-Bootstrap**
 - ✓ Copies `ddp_template_base_class/` (base classes for pro-code transformations)
+- ✓ Patches generated Artifactory references so `make init` reuses the configured registry and credentials
 - ✓ Generates a ready-to-use transformer script:
   - Created from `derived_sales_contract_transformation.py` template
   - Renamed to `<repo_name>_transformation.py`
